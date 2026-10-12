@@ -1,5 +1,6 @@
 /* filepath: c:\Users\stian\my-app\src\Navbar.css */
 .navbar {
+  /*display: none; /* Hide the navbar by default */
   position: fixed; /* Fix the navbar at the top */
   top: 0;
   left: 0;
@@ -57,5 +58,5 @@
 
 /* Add padding to the body to prevent content from being hidden behind the navbar */
 body {
-  padding-top: 70px; /* Adjust this value based on the navbar height */
+  /*padding-top: 70px; /* Adjust this value based on the navbar height */
 }

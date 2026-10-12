@@ -74,13 +74,11 @@ function WordGame() {
     setDragging(null);
     setOverDelete(false);
 
-    // Check if dropped on the delete zone
     if (e && isOverDeleteZone(e.clientX, e.clientY)) {
       setCanvasWords((cw) => cw.filter((w) => w.id !== currentDragging.id));
       return;
     }
 
-    // Read current words from ref so we never call fetch inside a setState updater
     const prev = canvasWordsRef.current;
     const draggedWord = prev.find((w) => w.id === currentDragging.id);
     if (!draggedWord) return;
@@ -103,10 +101,8 @@ function WordGame() {
     const word2 = overlapping.text;
     const removeIds = [currentDragging.id, overlapping.id];
 
-    // Remove both tiles immediately
     setCanvasWords((cw) => cw.filter((w) => !removeIds.includes(w.id)));
 
-    // Fire the API call cleanly outside any setState updater
     fetch('http://localhost:5000/process-strings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

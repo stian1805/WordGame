@@ -1,20 +1,20 @@
 const { Pool } = require('pg');
 const fetch = (...args) => import('node-fetch').then(mod => mod.default(...args));
 const OLLAMA_URL = 'http://localhost:11434/api/generate';
-const OLLAMA_MODEL = 'llama3.2:3b';
+const OLLAMA_MODEL = 'llama3.1:8b';
+const DB_PASSWORD = process.env.DB_PASSWORD;
 
-// PostgreSQL connection
 const pool = new Pool({
   user: 'postgres',
   host: 'localhost',
   database: 'postgres',
-  password: 'miASDjua99Q!dsaA!',
-  port: 5432, // Default PostgreSQL port
+  password: DB_PASSWORD,
+  port: 5432,
 });
 
 pool.connect()
   .then(client => {
-    console.log('Connected to PostgreSQL successfully!');
+    console.log('Connected to PostgreSQL');
     client.release();
   })
   .catch(err => {
@@ -32,10 +32,20 @@ async function callLLM(prompt) {
   return data.response?.trim() || '';
 }
 
+function capitalizeFirstLetter(value) {
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function formatResponse(value) {
+  const cleaned = value.replace(/[^a-zA-Z\s]/g, '').trim();
+  const firstWord = cleaned.split(/\s+/)[0] || '';
+  return capitalizeFirstLetter(firstWord);
+}
+
 async function checkIfExists(first, second) {
   try {
     const result = await pool.query(
-      'SELECT * FROM combination WHERE first = $1 AND second = $2',
+      'SELECT * FROM combinations WHERE first = $1 AND second = $2',
       [first, second]
     );
 
@@ -52,15 +62,15 @@ async function checkIfExists(first, second) {
   }
 }
 
-async function checkIfValidWords(first, second) {
+async function checkWordsExistence(first, second) {
   let result1, result2;
   try {
     result1 = await pool.query(
-      'SELECT * FROM combination WHERE result = $1',
+      'SELECT * FROM combinations WHERE result = $1',
       [first]
     );
     result2 = await pool.query(
-      'SELECT * FROM combination WHERE result = $1',
+      'SELECT * FROM combinations WHERE result = $1',
       [second]
     );
   } catch (err) {
@@ -71,11 +81,9 @@ async function checkIfValidWords(first, second) {
   return (result1.rows.length > 0) && (result2.rows.length > 0);
 }
 
-// Function to process the strings
-async function processStrings(string1, string2) {
+async function generateCombination(string1, string2) {
   console.log('############ Processing strings:', string1, string2 ,'############');
   if (!string1 || !string2) {
-    console.log('Both strings are required.');
     throw new Error('Both strings are required.');
   }
 
@@ -93,46 +101,44 @@ async function processStrings(string1, string2) {
   if (result.exists) {
     console.log('Found existing combination in DB:', result.data.result);
     const dbWord = result.data.result;
-    return dbWord.charAt(0).toUpperCase() + dbWord.slice(1).toLowerCase();
+    return capitalizeFirstLetter(dbWord);
   }
 
-  // Check if first and second in db
-  console.log('Checking validity of words:', first, second);
-  const valid = await checkIfValidWords(first, second);
-  if(!valid) {
-    console.log('One or both words are not valid.');
-    throw new Error('One or both words are not valid.');
+  // Check if first and second exist in db
+  console.log('Checking existence of words:', first, second);
+  const wordsExist = await checkWordsExistence(first, second);
+  if(!wordsExist) {
+    throw new Error('One or both words are not in the database.');
   }
-  console.log('Both words are valid.');
+  console.log('Both words are in the database.');
 
-  // query database for prevous results
-  results = await pool.query('SELECT result FROM combination');
+  results = await pool.query('SELECT result FROM combinations');
 
-  // 🔹 LLM logic with await
-  llmQuery = `You are a word combination engine for an alchemy puzzle game, similar to Little Alchemy.
-Your job: given two words, output the single most obvious, common, everyday English noun that people would naturally expect from combining them.
+  llmQuery = 
+  `You are a word-combination engine. Your task: Given two input nouns, output exactly ONE simple, common, everyday English word that a typical player would naturally expect when combining them.
 
-Guidelines:
-- Output ONE word only. No punctuation, no explanation, nothing else.
-- Prefer simple, well-known nouns that a child would recognise (e.g. steam, mud, smoke, lava, storm).
-- The result should feel inevitable and satisfying, not surprising or abstract.
-- Never output one of the two input words as the result.
-- Never output made-up words, adjectives, verbs, or abstract concepts.
-- Do not use one of the following: ${results.rows.map(r => r.result).join(', ')}.
+   Rules:
+    - Output ONE word only. No sentences, punctuation, or explanation.
+    - The result must be a well-known, concrete word that a child would understand.
+    - Avoid repeating either input word as the answer.
+    - The result should be a natural combination or association of the two inputs, not a random or obscure word.
+    - The answer can also be clever or a pun.
+    - Do not use the following as the allready have been used: ${results.rows.map(r => r.result).join(', ')}.
 
-Now output the single best result word for:
-${first} + ${second} =`;
+   Example:
+   fire + water = steam
+   water + plant = algae
+   air + water = cloud
+   mud + fire = brick
 
-  console.log('Calling LLM: ', llmQuery);
+    Now give the best possible result for:  
+    ${first} + ${second} =`;
 
   let resultFromLLM = await callLLM(llmQuery);
 
   console.log('LLM raw result:', resultFromLLM);
 
-  // format response
-  resultFromLLM = resultFromLLM.replace(/[^a-zA-Z\s]/g, '').trim();
-  resultFromLLM = resultFromLLM.split(/\s+/)[0] || '';
-  resultFromLLM = resultFromLLM.charAt(0).toUpperCase() + resultFromLLM.slice(1).toLowerCase();
+  resultFromLLM = formatResponse(resultFromLLM);
   console.log('Formatted LLM result:', resultFromLLM);
 
   if (!resultFromLLM) {
@@ -142,15 +148,15 @@ ${first} + ${second} =`;
   // Store new combination in DB
   try {
     await pool.query(
-      'INSERT INTO combination (first, second, result) VALUES ($1, $2, $3)',
+      'INSERT INTO combinations (first, second, result) VALUES ($1, $2, $3)',
       [first, second, resultFromLLM.toLowerCase()]
     );
     console.log('Stored new combination in DB:', first, '+', second, '=', resultFromLLM);
   } catch (err) {
-    console.error('Failed to store combination in DB:', err);
+    throw new Error('Failed to store combination in DB.');
   }
 
   return resultFromLLM;
 }
 
-module.exports = { processStrings };
+module.exports = { generateCombination };

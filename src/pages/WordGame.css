@@ -4,7 +4,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding-top: 70px; /* push content below fixed navbar; background covers the full viewport */
+  padding-top: 0;
   display: flex;
   overflow: hidden;
   background: #11111b;
